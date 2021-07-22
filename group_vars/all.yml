@@ -1,0 +1,24 @@
+---
+# vars file for awx_patch
+sn_instance: 
+stop_services:
+  - nails
+  - cma
+  - cbdaemon
+  - isecsepd.service
+  - mfefmpd.service
+  - puppet
+  - mfeespd
+  - mfetpd
+  - mcafee.ma
+yum_disabled_repos: "*rtif*,epel*,*sensu*"
+yum_exclude:
+separator: '/'
+rebooted_within_days_desired: 2
+uptime_days: "{{ (ansible_uptime_seconds / 3600 / 24)|int }}"
+filesystem: /var
+tier: prod
+snapshot: true
+schedule_for: "{{ lookup('pipe','date --date=\"48 hour\" +%Y%m%dT%H%M%SZ -u') }}"
+reboot: yes
+validate: yes

@@ -1,0 +1,27 @@
+- name: Find Guest's Folder using name
+  vmware_guest_find:
+    hostname: "{{ vm_server }}"
+    username: "{{ vm_user }}"
+    password: "{{ vm_password }}"
+    validate_certs: no
+    name: "{{ inventory_hostname_short }}"
+  delegate_to: localhost
+  register: vm_folder
+
+- name: Set datacentre fact
+  set_fact:
+    datacentre: "{{ vm_folder.folders[0].split(separator)[1] }}"
+
+- name: Delete a snapshot
+  vmware_guest_snapshot:
+    hostname: "{{ vm_server }}"
+    username: "{{ vm_user }}"
+    password: "{{ vm_password }}"
+    validate_certs: no
+    folder: vm_folder.folders
+    datacenter: datacentre
+    name: "{{ inventory_hostname_short }}"
+    state: absent
+    snapshot_name: Prepatch_AWX
+    description: Prepatching Snapshot
+  delegate_to: localhost

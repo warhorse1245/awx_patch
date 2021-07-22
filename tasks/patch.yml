@@ -1,0 +1,46 @@
+- service_facts:
+
+- name: stop and disable a service
+  service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  when: "item in service_names"
+  loop: "{{ stop_services }}"
+  vars:
+    service_names: "{{ services|dict2items|map(attribute='value.name')|list }}"
+
+- name: Ensure rhsmcertd restarted to ensure sanity.
+  service:
+    name:  rhsmcertd
+    state: restarted
+
+- name: Notification to users logged into system
+  shell: wall "{{ inventory_hostname }} is being patched and will be rebooted in the next few minutes"
+
+- name: Remove unixODBC.i686 if present
+  yum:
+    name: unixODBC.i686
+    state: absent
+  notify: Reinstall unixODBC.i686
+
+- name: Update Systems
+  yum:
+    name: '*'
+    state: latest
+    disablerepo: "{{ yum_disabled_repos }}"
+    exclude: "{{ yum_exclude | default(omit) }}"
+  environment: 
+    ACCEPT_EULA: y
+  register: patch_output
+  async: 600
+  poll: 60
+
+- name: Flush handlers
+  meta: flush_handlers
+
+- name: Check if yum update was successful and reboot
+  reboot:
+    msg: "This host is now rebooting following patching...."
+  when: patch_output.rc == 0
+  ignore_errors: yes

@@ -1,0 +1,182 @@
+---
+- name: Connection Check and the Sorting Hat - three points to Gryffindor
+  hosts: all
+  connection: local
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+    - name: Obtain start time of job
+      shell: date '+%F %R:%S'
+      register: start_time
+      run_once: true
+
+    - block:
+        - name: determine hosts that are up
+          wait_for_connection:
+            timeout: 3
+            connect_timeout: 3
+          vars:
+            ansible_connection: ssh
+
+        - name: Sort running DC1 hosts into DC1 group
+          group_by: key=dc1_hosts
+          when: "'dc1' in inventory_hostname|lower | regex_search('^....(..)') or 'dc1' in inventory_hostname|lower | regex_search('^(..)') "
+
+        - name: Sort running DC2 hosts into DC2 group
+          group_by: key=dc2_hosts
+          when: "'dc2' in inventory_hostname|lower | regex_search('^....(..)') or 'dc2' in inventory_hostname|lower | regex_search('^(..)')"
+
+        - name: Set tier to Dev
+          set_fact:
+            tier: dev
+          when: "'dev' in ansible_limit | regex_search('^...(...)')"
+
+        - name: Set tier to QA
+          set_fact:
+            tier: qa
+          when: "'qa' in ansible_limit | regex_search('^...(..)')"
+
+        - name: Set tier to PreProd
+          set_fact:
+            tier: preprod
+          when: "'pre' in ansible_limit | regex_search('^...(...)')"
+
+        - name: Sort Legacy Prod Hosts
+          group_by: key=dc2_hosts
+          when: "'dc2_hosts' not in group_names and 'dc1_hosts' not in group_names and tier == 'prod'"
+
+        - name: Sort Legacy nonProd Hosts
+          group_by: key=dc1_hosts
+          when: "'dc2_hosts' not in group_names and 'dc1_hosts' not in group_names and tier != 'prod'"
+
+      rescue:
+        - name: Add host to unreachable
+          shell: echo {{ inventory_hostname }}.unreach >> /tmp/hosts_failed.txt
+
+- name: Prepatch Checks
+  hosts: dc1_hosts:dc2_hosts
+  gather_facts: true
+  become: yes
+  vars_files:
+    - vaults/patch_credentials.yml
+
+  tasks:
+
+  - name: Run Prepatch Checks and Fix issues
+    import_tasks: tasks/prepatch.yml
+
+- name: Notify ServiceNow
+  hosts: dc1_hosts:dc2_hosts
+  gather_facts: false
+  become: yes
+  vars_files:
+    - vaults/patch_credentials.yml
+
+  tasks:
+
+  - name: Run Notification to ServiceNow that Patching is commencing
+    import_tasks: tasks/notify_start.yml
+
+- name: Run any Change Specific Tasks
+  hosts: dc1_hosts:dc2_hosts
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+  - name: Ad-hoc tasks for change
+    import_tasks: tasks/change_tasks.yml
+
+- name: Sort Vormetric hosts into group
+  hosts: dc1_hosts:dc2_hosts
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+  - name: Obtain Package Manifest
+    package_facts:
+      manager: "auto"
+
+  - name: Sort RHEL7 Vormetric Hosts into group
+    group_by: key=vorm
+    when: "'vee-fs' in ansible_facts.packages and ansible_distribution_release == 'Maipo'"
+
+- name: Update Vormetric Clients
+  hosts: vorm
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+  - name: Upgrade vee-fs package and reboot
+    import_tasks: tasks/vormetric.yml
+
+- name: Patch Systems
+  hosts: dc1_hosts:dc2_hosts
+  gather_facts: true
+  gather_subset: min
+  become: yes
+
+  tasks:
+
+  - name: Commence Patching
+    import_tasks: tasks/patch.yml
+
+  handlers:
+
+  - name: Reinstall unixODBC.i686
+    yum:
+      name: unixODBC.i686
+      state: latest
+
+- name: Ensure hosts all came back from Reboot
+  hosts: dc1_hosts:dc2_hosts
+  #hosts: application:database
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - block:
+        - name: determine hosts that are up
+          wait_for_connection:
+            timeout: 3
+            connect_timeout: 3
+          vars:
+            ansible_connection: ssh
+        - name: Sort running hosts into group
+          group_by: key=running_hosts
+      rescue:
+        - name: Add host to unreachable
+          shell: echo {{ inventory_hostname }}.unreach.postpatch >> /tmp/hosts_failed.txt
+
+- name: Validate Patched Hosts
+  hosts: running_hosts
+  gather_facts: true
+  gather_subset: min
+  become: yes  
+  
+  tasks:
+
+  - name: Validation
+    import_tasks: tasks/validate.yml
+
+- name: Notify on completion
+  hosts: running_hosts
+  gather_facts: false
+  become: yes
+  vars_files:
+    - vaults/patch_credentials.yml
+
+  tasks:
+
+  - name: Obtain Finish Time
+    shell: date '+%F %R:%S'
+    connection: local
+    run_once: true
+    register: finish_time
+
+  - name: Notify ServiceNow, Teams, and E-mail
+    import_tasks: tasks/notify_finish.yml

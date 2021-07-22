@@ -1,0 +1,58 @@
+- name: Subscription Manager Check
+  block:
+  - name: Check Status
+    command: subscription-manager status
+   
+  rescue:
+  - name: "Clean up local Subscription Manager"
+    command: subscription-manager clean
+
+  - name: Remove old katello-ca-consumer package
+    yum:
+      name: katello-ca-consumer*
+      state: absent
+
+  - name: Install new katello-ca for Production DC2
+    yum:
+      name: http://pdc2rhns.example.com/pub/katello-ca-consumer-latest.noarch.rpm
+      disable_gpg_check: true
+      state: present
+    when: tier == "prod" and "dc2_hosts" in group_names
+
+  - name: Install new katello-ca for Production DC1
+    yum:
+      name: http://pdc1rhcp.example.com/pub/katello-ca-consumer-latest.noarch.rpm
+      disable_gpg_check: true
+      state: present
+    when: tier == "prod" and "dc1_hosts" in group_names
+
+  - name: Install new katello-ca for NonProd DC2
+    yum:
+      name: http://pdc2rhns.example.com/pub/katello-ca-consumer-latest.noarch.rpm
+      disable_gpg_check: true
+      state: present
+    when: tier != "prod" and "dc2_hosts" in group_names
+
+  - name: Install new katello-ca for NonProd DC1
+    yum:
+      name: http://pdc1rhcp.example.com/pub/katello-ca-consumer-latest.noarch.rpm
+      disable_gpg_check: true
+      state: present
+    when: tier != "prod" and "dc1_hosts" in group_names
+
+  - name: Register Host
+    redhat_subscription:
+      activationkey: ak-{{tier}}-el{{ansible_distribution_major_version}}
+      org_id: org
+      state: present
+      auto_attach: yes
+      force_register: yes
+
+  - name: Enable Repos
+    rhsm_repository:
+      name: '*'
+      state: enabled
+
+  - name: Add hostname to Success file
+    connection: local
+    shell: echo {{ inventory_hostname }}.rhsmfix >> /tmp/hosts_success.txt

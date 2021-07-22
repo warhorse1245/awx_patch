@@ -1,0 +1,34 @@
+---
+- name: Connection Check and the Sorting Hat - three points to Hufflepuff
+  hosts: all
+  connection: local
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+    - name: Sort DC1 hosts into DC1 group
+      group_by: key=dc1_hosts
+      when: "'dc1' in inventory_hostname|lower | regex_search('^....(..)') "
+
+    - name: Sort DC2 hosts into DC2 group
+      group_by: key=dc2_hosts
+      when: "'dc2' in inventory_hostname|lower | regex_search('^....(..)')"
+
+    - name: Sort Legacy FGL/Marks Prod Hosts
+      group_by: key=dc2_hosts
+      when: "'dc2_hosts' not in group_names and 'dc1_hosts' not in group_names and tier == 'prod'"
+
+
+- name: Remove Snapshots
+  hosts: dc1_hosts:dc2_hosts
+  gather_facts: false
+  connection: local
+  become: yes
+  vars_files:
+    - vaults/patch_credentials.yml
+
+  tasks:
+
+  - name: Delete Snapshots
+    import_tasks: tasks/delete_snapshot.yml

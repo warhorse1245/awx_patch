@@ -1,0 +1,124 @@
+- name: Get LV for the FS
+  set_fact:
+    lvmdev: "{{ item.device }}"
+  with_items: "{{ ansible_mounts }}"
+  when: item.mount == filesystem
+
+- name: Set a fact for lvmdev_basename
+  set_fact:
+    lvmdev_basename: "{{ lvmdev | basename }}"
+
+- name: Set a fact for the VG
+  set_fact:
+    vg: "{{ lvmdev_basename.split('-')[0] }}"
+
+- name: Set a fact for the LV
+  set_fact:
+    lv: "{{ lvmdev_basename.split('-')[1] }}"
+
+- name: Let's see if we have space in our VG.  If not, define variable extendvg
+  set_fact:
+    extendvg: defined
+  when: item.key == vg and  item.value.free_g |int < 2
+  with_dict: "{{ ansible_lvm.vgs }}"
+
+- name: If extendvg is defined, we need to add disk and grow the VG
+  block:
+  - name: Find Guest's Folder using name
+    vmware_guest_find:
+      hostname: "{{ vm_server }}"
+      username: "{{ vm_user }}"
+      password: "{{ vm_password }}"
+      validate_certs: no
+      name: "{{ inventory_hostname_short }}"
+    delegate_to: localhost
+    register: vm_folder
+
+  - name: Set datacentre fact
+    set_fact:
+      datacentre: "{{ vm_folder.folders[0].split(separator)[1] }}"
+
+  - name: Gather disk info from virtual machine
+    vmware_guest_disk_info:
+      hostname: "{{ vm_server }}"
+      username: "{{ vm_user }}"
+      password: "{{ vm_password }}"
+      datacenter: "{{ datacentre }}"
+      validate_certs: no
+      name: "{{ inventory_hostname_short }}"
+    delegate_to: localhost
+    register: disk_info
+
+  - name: set controllerFacts
+    set_fact:
+      controllerFacts: "{{ disk_info.guest_disk_info.values()| map(attribute='controller_key') | list  }}"
+
+  - name: set facts - controllerKey
+    set_fact:
+      controllerKey: "{{ controllerFacts | sort | last  }}"
+
+  - name: set fact - unitFact
+    set_fact:
+      unitFact: "{{ disk_info.guest_disk_info.values()| map(attribute='unit_number') | list }}"
+
+  - name: set fact - unitNumber
+    set_fact:
+      unitNumber: "{{ unitFact | sort | last |int +1 }}"
+
+  - name: Skip SCSI controller No 7
+    set_fact:
+      unitNumber: "{{ unitNumber |int+1 }}"
+    when: unitNumber == "7"
+
+  - name: Add Disk to VM
+    vmware_guest_disk:
+      hostname: "{{ vm_server }}"
+      username: "{{ vm_user }}"
+      password: "{{ vm_password }}"
+      datacenter: "{{ datacentre }}"
+      validate_certs: no
+      name: "{{ inventory_hostname_short }}"
+      disk:
+        - size_gb: 50
+          state: present
+          autoselect_datastore: True
+          scsi_controller: "{{ controllerKey[3:4] }}"
+          unit_number: "{{ unitNumber }}"
+    delegate_to: localhost
+
+  - name: Reread Partition Table
+    command: partprobe
+    ignore_errors: true
+
+  - name: Rerun setup to see new PV
+    setup:
+      filter: ansible_devices
+
+  - name: Get name of new PV
+    set_fact:
+      newdisk: "/dev/{{ item.key }}"
+    when:
+      - not item.value.partitions
+      - not item.value.holders
+      - not item.value.links.ids
+      - item.value.size == "50.00 GB"
+      - item.key is match ("sd")
+    with_dict: "{{ ansible_devices }}"
+
+  rescue:
+  - name: Add hostname to exception file
+    connection: local
+    shell: echo {{ inventory_hostname }}.diskaddfail >> /tmp/hosts_failed.txt
+
+  when: extendvg is defined
+
+- name: Extend VG {{ vg }}
+  command: vgextend {{ vg }} {{ newdisk }}
+  when: newdisk is defined
+
+- name: Extend LV {{ lv }}
+  command: lvextend -L +2048 {{ lvmdev }} -r
+
+- name: Add notification to hosts_success.txt
+  connection: local
+  shell: echo {{ inventory_hostname }}.varfix /tmp/hosts_success.txt

@@ -1,0 +1,30 @@
+- name: Verify that Host was patched
+  yum:
+    list: updates
+    disablerepo: "{{ yum_disabled_repos }}"
+    exclude: "{{ yum_exclude | default(omit) }}"
+  register: check_result
+  ignore_errors: yes
+
+- name: Log hosts that did not patch
+  connection: local
+  shell: echo {{ inventory_hostname }}.nopatch >> /tmp/hosts_failed.txt
+  when: check_result.results | length > 0
+
+- name: Get Uptime
+  setup:
+    filter: ansible_uptime_seconds
+
+- name: Log hosts that did not reboot
+  connection: local
+  shell: echo {{ inventory_hostname }}.noboot >> /tmp/hosts_failed.txt
+  when: "uptime_days|int > rebooted_within_days_desired|int"
+
+- name: Log Successful Hosts
+  connection: local
+  shell: echo {{ inventory_hostname }} >> /tmp/hosts_success.txt
+  when: "check_result.results|length < 1 and uptime_days|int <= rebooted_within_days_desired|int"
+
+- name: Run mount to ensure NFS mounted
+  command: mount -a
+  ignore_errors: yes

@@ -1,0 +1,15 @@
+- name: Take Snapshosts if Production
+  include_tasks: vmware_snapshot.yml
+  when: tier == "prod" and snapshot|bool == true
+  ignore_errors: true
+
+- name: Check and fix Satellite Registration if required
+  include_tasks: rhsm_fix.yml
+
+- name: Check disk space for /var
+  shell: /bin/df -P /var | grep -v Filesystem |awk '{print $4/1024}'
+  register: var_result
+
+- name: Fix Disk Space if required
+  include_tasks: add_disk.yml
+  when: var_result.stdout | int <= 2048

@@ -1,0 +1,14 @@
+- name: Update ServiceNow that patching is beginning
+  snow_record:
+    username: "{{ sn_username }}"
+    password: "{{ sn_password }}"
+    instance: "{{ sn_instance }}"
+    state: present
+    number: "{{ snow_number }}"
+    table: change_task
+    data:
+      work_notes : "Patching is commencing on {{ ansible_limit }}"
+  connection: local
+  run_once: true
+  ignore_errors: true
+  when: snow_number is defined

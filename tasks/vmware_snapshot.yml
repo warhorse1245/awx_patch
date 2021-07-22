@@ -1,0 +1,47 @@
+- name: Find Guest's Folder using name
+  vmware_guest_find:
+    hostname: "{{ vm_server }}"
+    username: "{{ vm_user }}"
+    password: "{{ vm_password }}"
+    validate_certs: no
+    name: "{{ inventory_hostname_short }}"
+  delegate_to: localhost
+  register: vm_folder
+
+- name: Set datacentre fact
+  set_fact:
+    datacentre: "{{ vm_folder.folders[0].split(separator)[1] }}"
+
+- name: Create a snapshot
+  vmware_guest_snapshot:
+    hostname: "{{ vm_server }}"
+    username: "{{ vm_user }}"
+    password: "{{ vm_password }}"
+    validate_certs: no
+    folder: vm_folder.folders
+    datacenter: datacentre
+    name: "{{ inventory_hostname_short}}"
+    state: present
+    snapshot_name: Prepatch_AWX
+    description: Prepatching Snapshot
+  delegate_to: localhost
+
+- name: Schedule Snapshot Deletion
+  uri:
+    url: "https://ddc1awx.example.com/api/v2/job_templates/102/schedules/"
+    method: POST
+    validate_certs: no
+    user: "{{ awx_username }}"
+    password: "{{ awx_password }}"
+    force_basic_auth: yes
+    status_code: 201
+    body_format: json
+    body: |
+      {
+      "rrule": "DTSTART:{{ schedule_for }} RRULE:FREQ=DAILY;INTERVAL=1;COUNT=1",
+      "name": "Snapshot Deletion Post Patch - {{ ansible_limit }} - {{ awx_schedule_name }}",
+      "limit": "{{ ansible_limit }}",
+      "unified_job_template": "102"
+      }
+  delegate_to: localhost
+  run_once: true

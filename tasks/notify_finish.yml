@@ -1,0 +1,90 @@
+- name: Test Exception file to see if there's anything there
+  stat:
+    path: /tmp/hosts_failed.txt
+  connection: local
+  run_once: true
+  register: output_check
+
+- name: Update ServiceNow that patching is complete
+  snow_record:
+    username: "{{ sn_username }}"
+    password: "{{ sn_password }}"
+    instance: "{{ sn_instance }}"
+    state: present
+    number: "{{ snow_number }}"
+    data:
+      call_type: "Complete"
+      u_task_close_notes : "Patching has completed successfully on {{ ansible_limit }}"
+      u_task_closure_code: "successful"
+      state: 3
+      work_start: "{{ start_time.stdout }}"
+      work_end: "{{ finish_time.stdout }}"
+    table: change_task
+  connection: local
+  run_once: true
+  ignore_errors: true
+  when: snow_number is defined and not output_check.stat.exists
+
+- name: Update ServiceNow if any failures
+  snow_record:
+    username: "{{ sn_username }}"
+    password: "{{ sn_password }}"
+    instance: "{{ sn_instance }}"
+    state: present
+    number: "{{ snow_number }}"
+    data:
+      work_notes: "Patching has completed on {{ ansible_limit }}.  Exception file has been attached to the ticket."
+    attachment: /tmp/hosts_failed.txt
+    table: change_task
+  connection: local
+  run_once: true
+  ignore_errors: true
+  when: snow_number is defined and output_check.stat.exists
+
+- name: Mail Results - Failures
+  connection: local
+  run_once: true
+  mail:
+    host: relay.example.com
+    port: 25
+    subject: Patching - Failed Hosts for "{{ ansible_limit }}"
+    from: awx@ddc1awx.example.com
+    to: john.smith@example.com
+    cc: bob.jones@example.com
+    body: Failed hosts
+    attach: /tmp/hosts_failed.txt
+    charset: us-ascii
+  when: output_check.stat.exists
+
+- name: Mail Results - Success
+  connection: local
+  run_once: true
+  mail:
+    host: relay.example.com
+    port: 25
+    subject: Patching - Successful Hosts for "{{ ansible_limit }}"
+    from: awx@ddc1awx.example.com
+    to: john.smith@example.com
+    cc: bob.jones@example.com
+    body: The attachment contains the list of successfully patched systems
+    attach: /tmp/hosts_success.txt
+    charset: us-ascii
+
+- name: Post to MS Teams
+  connection: local
+  run_once: true
+  uri:
+    url: "https://example.com/msteams-webhook URL"
+    method: POST
+    status_code: 200
+    body_format: json
+    body: |
+      {
+          "title": "AWX notification message",
+          "text": "Patching complete on {{ ansible_limit }}"
+      }
+
+- name: Remove Results Files
+  connection: local
+  run_once: true
+  shell: rm /tmp/hosts*

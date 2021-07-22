@@ -1,0 +1,48 @@
+- name: Obtain current version of vee-fs
+  shell: rpm -qa | grep vee-fs
+  register: current_vorm
+
+- name: Download Latest Vormetric Client
+  get_url:
+    url: http://pdc2rhns.example.com/pub/vormetric/vee-fs-latest-rh7-x86_64.bin
+    dest: /tmp/vee-fs-latest-rh7-x86_64.bin
+    mode: '0755'
+
+- name: Add Auto Resigning Config to file
+  lineinfile:
+    path: /opt/vormetric/DataSecurityExpert/agent/vmd/etc/agent.conf
+    line: AUTO_RESIGN_HOST_SETTINGS=TRUE
+
+- name: Schedule Vormetric Upgrade on Reboot
+  command: /usr/bin/voradmin upgrade schedule /tmp/vee-fs-latest-rh7-x86_64.bin -y
+
+- name: Reboot System
+  reboot:
+    msg: "This host is rebooting to upgrade Vormetric"
+  ignore_errors: true
+
+- name: Remove Vormetric Update file
+  file:
+    path: /tmp/vee-fs-latest-rh7-x86_64.bin
+    state: absent
+
+- name: Obtain new version of vee-fs
+  shell: rpm -qa | grep vee-fs
+  register: new_vorm
+
+- name: Log failed upgrade
+  connection: local
+  shell: echo {{ inventory_hostname }}.veefs.upgrade.fail >> /tmp/hosts_failed.txt
+  when: current_vorm.stdout == new_vorm.stdout
+  failed_when: current_vorm.stdout == new_vorm.stdout
+  ignore_errors: true
+
+- name: Obtain current Agent Health
+  command: /opt/vormetric/DataSecurityExpert/agent/vmd/bin/agenthealth
+  register: agent_health
+  ignore_errors: true
+
+- name: Log failed Agent Status
+  connection: local
+  shell: echo {{ inventory_hostname }}.veefs.agent.fail >> /tmp/hosts_failed.txt
+  when: agent_health.rc != 0

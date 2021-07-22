@@ -1,0 +1,48 @@
+# Place one-off change tasks into this playbook. Some examples are included below
+
+#- name: Disable Goferd
+#  service:
+#    name: goferd
+#    state: stopped
+#    enabled: no
+
+#- name: Disable Puppet
+#  service:
+#    name: puppet
+#    state: stopped
+#    enabled: no
+#  ignore_errors: true
+
+#- name: Remove Puppet
+#  yum:
+#    name: puppet
+#    state: absent
+#  ignore_errors: true
+
+- name: Placeholder task
+  shell: echo "No one-off changes today!"
+#
+#- name: Remove VSE
+#  script: scripts/vse_uninstall
+#  ignore_errors: yes
+
+#- name: Ensure Kex algorithms are set for rhel7
+#  lineinfile:
+#    path: /etc/ssh/sshd_config
+#    line: KexAlgorithms diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,curve25519-sha256
+#    backup: yes
+#  when: ansible_distribution_release == "Maipo"
+
+#- name: Ensure Kex algorithms are set for rhel6
+#  lineinfile:
+#    path: /etc/ssh/sshd_config
+#    line: KexAlgorithms diffie-hellman-group-exchange-sha256
+#    backup: yes
+#  when: ansible_distribution_release == "Santiago"
+
+#- name: Change /etc/rsyslog.conf
+#  lineinfile:
+#    path: /etc/rsyslog.conf
+#    line: '*.*                                                        @@10.1.1.13'
+#    state: present
+#    backup: yes
