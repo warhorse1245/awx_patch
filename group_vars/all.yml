@@ -4,7 +4,6 @@ sn_instance:
 stop_services:
   - nails
   - cma
-  - cbdaemon
   - isecsepd.service
   - mfefmpd.service
   - puppet
