@@ -19,5 +19,3 @@ filesystem: /var
 tier: prod
 snapshot: true
 schedule_for: "{{ lookup('pipe','date --date=\"48 hour\" +%Y%m%dT%H%M%SZ -u') }}"
-reboot: yes
-validate: yes
